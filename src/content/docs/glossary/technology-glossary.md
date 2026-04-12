@@ -1,8 +1,5 @@
 ---
 title: "Acme Corporation — Technology Glossary"
-last-updated: "2025-06-15"
-owner: "Acme Tech — Documentation & Knowledge Management"
-status: "Active"
 ---
 
 # Acme Corporation — Technology Glossary

@@ -1,8 +1,5 @@
 ---
 title: "Business Overview Template"
-last-updated: "2025-06-15"
-owner: "Acme Tech — Documentation & Knowledge Management"
-status: "Active"
 ---
 
 # Business Overview Template

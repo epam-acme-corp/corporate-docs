@@ -1,8 +1,5 @@
 ---
 title: "Acme Corporation — Corporate Overview"
-last-updated: "2025-06-15"
-owner: "Acme Corporation — Office of the Group CTO"
-status: "Active"
 ---
 
 # Acme Corporation — Corporate Overview

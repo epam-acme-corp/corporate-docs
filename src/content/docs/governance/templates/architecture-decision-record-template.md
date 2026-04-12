@@ -1,8 +1,5 @@
 ---
 title: "Architecture Decision Record Template"
-last-updated: "2025-06-15"
-owner: "Acme Tech — Documentation & Knowledge Management"
-status: "Active"
 ---
 
 # Architecture Decision Record Template
