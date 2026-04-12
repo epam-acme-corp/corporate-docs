@@ -8,7 +8,6 @@ export default defineConfig({
     starlight({
       title: 'Acme Corporation',
       description: 'Corporate Knowledge Base',
-      logo: { alt: 'Acme Corp', replacesTitle: false },
       social: { github: 'https://github.com/epam-acme-corp' },
       sidebar: [
         { label: 'Overview', slug: 'overview' },
