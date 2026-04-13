@@ -12,7 +12,7 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: 'https://github.com/epam-acme-corp' },
       ],
       components: {
-        SiteTitle: './src/components/OPCOSelector.astro',
+        ThemeSelect: './src/components/ThemeSelectWithOPCO.astro',
       },
       sidebar: [
         { label: 'Overview', slug: 'overview' },
