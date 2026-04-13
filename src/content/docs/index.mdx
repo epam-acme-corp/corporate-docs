@@ -13,3 +13,129 @@ hero:
       link: /corporate-docs/architecture/
       icon: seti:config
 ---
+
+<div class="opco-section">
+  <h2 class="opco-heading">Explore Our Business Units</h2>
+  <div class="opco-grid">
+    <a href="https://epam-acme-corp.github.io/tech-docs/" class="opco-card" style="--card-gradient: linear-gradient(135deg, #0066ff, #00bcd4)">
+      <span class="opco-arrow">→</span>
+      <div class="opco-card-content">
+        <h3>Acme Tech</h3>
+        <p>Platform Engineering &amp; Shared Services</p>
+      </div>
+    </a>
+    <a href="https://epam-acme-corp.github.io/distribution-docs/" class="opco-card" style="--card-gradient: linear-gradient(135deg, #ff6b35, #f5a623)">
+      <span class="opco-arrow">→</span>
+      <div class="opco-card-content">
+        <h3>Acme Distribution</h3>
+        <p>Logistics, Fleet &amp; Supply Chain</p>
+      </div>
+    </a>
+    <a href="https://epam-acme-corp.github.io/financial-services-docs/" class="opco-card" style="--card-gradient: linear-gradient(135deg, #00897b, #26a69a)">
+      <span class="opco-arrow">→</span>
+      <div class="opco-card-content">
+        <h3>Acme Financial Services</h3>
+        <p>Banking, Payments &amp; Risk Management</p>
+      </div>
+    </a>
+    <a href="https://epam-acme-corp.github.io/insurance-docs/" class="opco-card" style="--card-gradient: linear-gradient(135deg, #7b1fa2, #ab47bc)">
+      <span class="opco-arrow">→</span>
+      <div class="opco-card-content">
+        <h3>Acme Insurance</h3>
+        <p>Policy Admin, Claims &amp; Actuarial</p>
+      </div>
+    </a>
+    <a href="https://epam-acme-corp.github.io/media-docs/" class="opco-card" style="--card-gradient: linear-gradient(135deg, #e53935, #f06292)">
+      <span class="opco-arrow">→</span>
+      <div class="opco-card-content">
+        <h3>Acme Media</h3>
+        <p>Streaming, Publishing &amp; Content</p>
+      </div>
+    </a>
+    <a href="https://epam-acme-corp.github.io/retail-docs/" class="opco-card" style="--card-gradient: linear-gradient(135deg, #3f51b5, #5c6bc0)">
+      <span class="opco-arrow">→</span>
+      <div class="opco-card-content">
+        <h3>Acme Retail</h3>
+        <p>E-Commerce, POS &amp; Loyalty</p>
+      </div>
+    </a>
+    <a href="https://epam-acme-corp.github.io/telco-docs/" class="opco-card" style="--card-gradient: linear-gradient(135deg, #009688, #4caf50)">
+      <span class="opco-arrow">→</span>
+      <div class="opco-card-content">
+        <h3>Acme Telco</h3>
+        <p>Network, Billing &amp; Provisioning</p>
+      </div>
+    </a>
+  </div>
+</div>
+
+<style>{`
+  .opco-section {
+    max-width: 1100px;
+    margin: 3rem auto;
+    padding: 0 1.5rem;
+  }
+  .opco-heading {
+    text-align: center;
+    color: var(--sl-color-white);
+    font-size: 1.75rem;
+    margin-bottom: 2rem;
+  }
+  .opco-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+  }
+  .opco-card {
+    position: relative;
+    border-radius: 1rem;
+    overflow: hidden;
+    text-decoration: none;
+    color: white;
+    min-height: 160px;
+    display: flex;
+    align-items: flex-end;
+    background: var(--card-gradient);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .opco-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  }
+  .opco-card-content {
+    width: 100%;
+    padding: 1.5rem;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .opco-card h3 {
+    margin: 0 0 0.25rem;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: white;
+  }
+  .opco-card p {
+    margin: 0;
+    font-size: 0.9rem;
+    opacity: 0.9;
+    color: rgba(255, 255, 255, 0.9);
+  }
+  .opco-arrow {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    font-size: 1.5rem;
+    color: rgba(255, 255, 255, 0.7);
+    transition: transform 0.2s ease, color 0.2s ease;
+  }
+  .opco-card:hover .opco-arrow {
+    transform: translateX(4px);
+    color: white;
+  }
+  @media (max-width: 600px) {
+    .opco-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+`}</style>
