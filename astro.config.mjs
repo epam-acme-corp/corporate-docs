@@ -11,9 +11,13 @@ export default defineConfig({
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/epam-acme-corp' },
       ],
+      components: {
+        SiteTitle: './src/components/OPCOSelector.astro',
+      },
       sidebar: [
         { label: 'Overview', slug: 'overview' },
         { label: 'System Registry', slug: 'system-registry' },
+        { label: 'Subsidiary Documentation Portal', slug: 'opco-directory' },
         {
           label: 'Architecture',
           autogenerate: { directory: 'architecture' },
