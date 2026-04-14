@@ -1,0 +1,112 @@
+---
+title: Azure Infrastructure Overview
+description: Hub-spoke Azure infrastructure baseline for Acme Corp OPCOs.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+# Azure Infrastructure Overview
+
+Acme Corp runs a shared Azure hub with seven OPCO spokes. The platform standard is **one AKS cluster per OPCO**, shared services in the hub, and **network, identity, and data isolation by design**. The target footprint covers **33 AKS-deployable systems** and keeps **12 non-AKS systems** on legacy or managed platforms until they are ready to move.
+
+## Topology
+
+```text
+                                           Internet
+                                               |
+                                      Azure Application Gateway
+                                               |
+                                   NGINX Ingress (internal LB)
+                                               |
+    +-----------------------------------------------------------------------------------+
+    | Hub: acme-infra-hub                                                               |
+    | VNet 10.0.0.0/16                                                                  |
+    | Azure Firewall | Bastion | Key Vault Premium | ACR Premium | Log Analytics        |
+    | Private DNS Zones | Azure Monitor Workspace (Managed Prometheus) | Grafana        |
+    +-----+-------------+-------------+-------------+-------------+-------------+--------+
+          |             |             |             |             |             | 
+          |             |             |             |             |             +-------------------+
+          |             |             |             |             |                                 |
+ +--------v-------+ +---v---------+ +--v----------+ +--v------------+ +--v----------+ +--v------+ +--v------+
+ | FSI            | | Retail      | | Insurance   | | Distribution  | | Telco       | | Media   | | Tech    |
+ | 10.1.0.0/16    | | 10.2.0.0/16 | | 10.3.0.0/16 | | 10.4.0.0/16   | | 10.5.0.0/16 | |10.6/16 | |10.7/16 |
+ | AKS + 6 NS     | | AKS + 7 NS  | | AKS + 0 NS  | | AKS + 3 NS    | | AKS + 7 NS  | |AKS+7NS | |AKS+3NS |
+ +----------------+ +-------------+ +-------------+ +---------------+ +-------------+ +---------+ +---------+
+```
+
+## Design principles
+
+1. **Isolation first** — every OPCO gets its own spoke VNet, AKS cluster, namespaces, identities, and private data-plane connectivity.
+2. **Shared controls in the hub** — firewall, Bastion, registry, Key Vault, DNS, and monitoring are centralized so spokes consume the same security and operations baseline.
+3. **Compliance-aware placement** — PCI workloads run on dedicated node pools and namespaces; Insurance stays as a future-ready landing zone until regulated migrations are approved.
+4. **Cost attribution by repo and spoke** — each infrastructure repo maps to one scope, making spend, ownership, and change history traceable.
+5. **Private by default** — private AKS APIs, private endpoints for managed data services, and private DNS integration are the standard path.
+
+## CIDR allocation
+
+| Scope | Repo | CIDR | Notes |
+|---|---|---|---|
+| Hub | `acme-infra-hub` | `10.0.0.0/16` | Shared networking, security, registry, secrets, DNS, monitoring |
+| Financial Services | `acme-infra-fsi` | `10.1.0.0/16` | 6 namespaces, GPU and PCI pools |
+| Retail | `acme-infra-retail` | `10.2.0.0/16` | 7 namespaces, GPU and PCI pools |
+| Insurance | `acme-infra-insurance` | `10.3.0.0/16` | Future-ready spoke, no active namespaces |
+| Distribution | `acme-infra-distribution` | `10.4.0.0/16` | 3 namespaces, standard workload pool |
+| Telco | `acme-infra-telco` | `10.5.0.0/16` | 7 namespaces, high-CPU pool |
+| Media | `acme-infra-media` | `10.6.0.0/16` | 7 namespaces, GPU and high-CPU pools |
+| Tech | `acme-infra-tech` | `10.7.0.0/16` | 3 namespaces for runners, observability, platform services |
+
+## System placement summary
+
+| OPCO | Namespace count | AKS-deployable systems | Notes |
+|---|---:|---|---|
+| FSI | 6 | Core Banking, Payments, Risk Engine, Regulatory, Wealth Mgmt, Data Warehouse | Payments is PCI; Risk Engine uses GPU |
+| Retail | 7 | eCommerce, Product Catalogue, Payment, Inventory, Order Fulfillment, Loyalty, Recommendation | Payment is PCI; Recommendation uses GPU |
+| Insurance | 0 | None currently scheduled to AKS | Legacy systems remain off-cluster |
+| Distribution | 3 | Route Optimisation, Fleet Mgmt, IoT Tracking | Standard workload pool only |
+| Telco | 7 | Billing, Rating, CRM, Self-Service, Network Monitoring, Provisioning, Fault Mgmt | Rating workloads use high-CPU pool |
+| Media | 7 | CMS, Streaming, Ad Platform, Workflow, Recommendation, Publishing, DRM | Recommendation uses GPU; streaming/ad workloads use general/high-CPU pools |
+| Tech | 3 | GitHub Runners, Observability, Infra Platform | Shared engineering platform spoke |
+
+## Infrastructure repositories
+
+| Repository | Purpose | GitHub |
+|---|---|---|
+| `acme-infra-hub` | Shared hub networking, security, registry, DNS, monitoring | [epam-acme-corp/acme-infra-hub](https://github.com/epam-acme-corp/acme-infra-hub) |
+| `acme-infra-fsi` | Financial Services spoke | [epam-acme-corp/acme-infra-fsi](https://github.com/epam-acme-corp/acme-infra-fsi) |
+| `acme-infra-retail` | Retail spoke | [epam-acme-corp/acme-infra-retail](https://github.com/epam-acme-corp/acme-infra-retail) |
+| `acme-infra-insurance` | Insurance spoke landing zone | [epam-acme-corp/acme-infra-insurance](https://github.com/epam-acme-corp/acme-infra-insurance) |
+| `acme-infra-distribution` | Distribution spoke | [epam-acme-corp/acme-infra-distribution](https://github.com/epam-acme-corp/acme-infra-distribution) |
+| `acme-infra-telco` | Telco spoke | [epam-acme-corp/acme-infra-telco](https://github.com/epam-acme-corp/acme-infra-telco) |
+| `acme-infra-media` | Media spoke | [epam-acme-corp/acme-infra-media](https://github.com/epam-acme-corp/acme-infra-media) |
+| `acme-infra-tech` | Acme Tech spoke | [epam-acme-corp/acme-infra-tech](https://github.com/epam-acme-corp/acme-infra-tech) |
+
+## Architecture pages
+
+<CardGrid>
+  <LinkCard
+    title="Hub Shared Services"
+    description="Firewall, Bastion, Key Vault, ACR, DNS, and monitoring services exposed to all spokes."
+    href="./hub-services.mdx"
+  />
+  <LinkCard
+    title="Spoke Architecture"
+    description="Standard spoke layout, node pool strategy, namespace isolation, and OPCO-specific variations."
+    href="./spoke-architecture.mdx"
+  />
+  <LinkCard
+    title="Network Security"
+    description="Hub egress control, spoke routing, PCI zones, private endpoints, and RBAC operating model."
+    href="./network-security.mdx"
+  />
+  <LinkCard
+    title="Deployment Guide"
+    description="Pulumi-based deployment order, config keys, secrets handling, CI/CD expectations, and troubleshooting."
+    href="./deployment-guide.mdx"
+  />
+</CardGrid>
+
+## Related documentation
+
+- [Enterprise Architecture Summary](./enterprise-summary.md)
+- [Enterprise Integration Architecture Overview](./integration-overview.md)
+- [Enterprise Data Flows](./data-flows.md)

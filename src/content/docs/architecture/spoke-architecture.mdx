@@ -1,0 +1,164 @@
+---
+title: Spoke Architecture
+description: Standard Azure spoke and AKS cluster design for each Acme Corp OPCO.
+---
+
+# Spoke Architecture
+
+Every OPCO gets an isolated Azure spoke with its own VNet and AKS cluster. The spoke owns business workloads; the hub supplies shared controls and services.
+
+## Standard spoke layout
+
+```text
+Spoke VNet (10.x.0.0/16)
+├─ snet-aks-system          control-plane-facing system nodes
+├─ snet-aks-workload        default application workloads
+├─ snet-aks-gpu             optional GPU workloads
+├─ snet-aks-highcpu         optional CPU-optimised workloads
+├─ snet-databases           delegated managed data services
+└─ snet-private-endpoints   private endpoints for PaaS dependencies
+
+Peering
+├─ spoke -> hub
+└─ hub -> spoke
+
+Shared integrations from hub
+├─ Key Vault
+├─ ACR
+├─ Log Analytics / Azure Monitor
+└─ Private DNS zones
+```
+
+## Standard spoke components
+
+| Component | Standard |
+|---|---|
+| VNet | Dedicated `/16` per OPCO |
+| AKS | Kubernetes `1.30` |
+| Network plugin | Azure CNI Overlay |
+| Node OS | Azure Linux (Mariner) |
+| Identity | System-assigned cluster identity + user-assigned workload identities |
+| Workload auth | OIDC issuer + Workload Identity |
+| Secrets | Azure Key Vault CSI Driver |
+| Ingress | NGINX Ingress Controller behind an internal load balancer, fronted by Azure Application Gateway |
+| Data access | Private Endpoints and private DNS |
+| Monitoring | Azure Monitor workspace + Log Analytics + Grafana |
+
+## Node pool strategy
+
+| Pool | Typical VM family | Purpose | Used by |
+|---|---|---|---|
+| `system` | `Standard_D4s_v5` (`D2s_v5` for Insurance) | Core AKS add-ons and platform services | All spokes |
+| `workload` | `Standard_D4s_v5` or `Standard_D8s_v5` | Default application workloads | FSI, Retail, Distribution, Telco, Media, Tech |
+| `gpu` | `Standard_NC6s_v3` | ML inference, recommendation, risk workloads | FSI, Retail, Media |
+| `highcpu` | `Standard_F16s_v2` | CPU-intensive rating, streaming, batch, analytics | Telco, Media |
+| `pci` | `Standard_D4s_v5` | Segregated payment workloads with taints and scheduling controls | FSI, Retail |
+
+### Placement rules
+
+- System components stay on the `system` pool.
+- Payment workloads only land on `pci` pools.
+- GPU workloads only land on `gpu` pools.
+- High-throughput rating or media processing lands on `highcpu`.
+- Insurance keeps only a minimal `system` footprint until the first migration wave is approved.
+
+## Namespace isolation
+
+Namespace isolation is the first application boundary inside each cluster.
+
+### Baseline controls
+
+- **One namespace per deployable business system**
+- **`ResourceQuota` per namespace**
+- **Default-deny `NetworkPolicy`**
+- Namespace-specific labels and annotations for:
+  - business domain
+  - compliance zone
+  - runtime family
+  - data tier
+  - affinity requirements
+
+### Example patterns in current repos
+
+| Repo | Pattern |
+|---|---|
+| `acme-infra-fsi` | Creates a namespace, `ResourceQuota`, and default-deny `NetworkPolicy` per workload |
+| `acme-infra-retail` | Creates namespace labels plus a workload-identity-backed service account per workload |
+| `acme-infra-distribution` | Creates namespaces with workload identity labels |
+| `acme-infra-tech` | Creates platform namespaces for shared engineering services |
+
+## Workload Identity integration
+
+The platform standard is **one user-assigned managed identity per namespace or bounded workload**.
+
+### Flow
+
+1. AKS exposes an **OIDC issuer**.
+2. Each workload gets a **user-assigned managed identity**.
+3. A **federated identity credential** binds the namespace service account to that identity.
+4. The Kubernetes service account is annotated with `azure.workload.identity/client-id`.
+5. Azure RBAC grants scoped access such as:
+   - `AcrPull`
+   - `Key Vault Secrets User`
+   - resource-specific reader or contributor roles when required
+
+This removes static secrets from deployments and keeps Azure access scoped to the namespace boundary.
+
+## Key Vault CSI Driver
+
+AKS clusters enable the **Azure Key Vault Secrets Provider** add-on. Application pods mount secrets through `SecretProviderClass` objects rather than embedding credentials in manifests.
+
+Use this pattern for:
+
+- database connection strings
+- API credentials
+- TLS certificates
+- per-namespace bootstrap secrets
+
+## Database connectivity
+
+Managed data services are accessed through **private endpoints** and private DNS.
+
+### Data placement rules
+
+- Use the `snet-databases` subnet for delegated managed services where required.
+- Use `snet-private-endpoints` for PaaS private endpoints.
+- Keep public network access disabled on managed PostgreSQL, Cosmos DB, Redis, MySQL, and similar services.
+- Preserve explicit exceptions for legacy platforms that remain on-premises or on IaaS.
+
+### Known external exceptions
+
+- FSI Oracle 19c remains outside this IaC footprint.
+- Insurance legacy estate remains off-cluster.
+- Telco Oracle 19c remains outside the Pulumi deployment.
+- Media DRM SQL Server remains external.
+
+## Per-OPCO variation
+
+| OPCO | CIDR | Namespaces | Node pools | Notes |
+|---|---|---|---|---|
+| FSI | `10.1.0.0/16` | `core-banking`, `payments`, `risk-engine`, `regulatory`, `wealth-mgmt`, `data-warehouse` | `system`, `workload`, `gpu`, `pci` | PCI payments zone and GPU-backed risk workloads |
+| Retail | `10.2.0.0/16` | `ecommerce`, `product-catalogue`, `payment`, `inventory`, `order-fulfillment`, `loyalty`, `recommendation` | `system`, `workload`, `gpu`, `pci` | Payment isolation and GPU recommendation tier |
+| Insurance | `10.3.0.0/16` | None currently | `system` only | Future-ready landing zone with no active workloads |
+| Distribution | `10.4.0.0/16` | `route-optimisation`, `fleet-management`, `iot-tracking` | `system`, `workload` | Smallest active spoke footprint |
+| Telco | `10.5.0.0/16` | `billing-mediation`, `rating-charging`, `crm-integration`, `self-service`, `network-monitoring`, `service-provisioning`, `fault-management` | `system`, `workload`, `highcpu` | Rating and charging workloads use CPU-optimised scheduling |
+| Media | `10.6.0.0/16` | `cms`, `streaming`, `ad-platform`, `content-workflow`, `recommendation`, `publishing`, `drm` | `system`, `workload`, `gpu`, `highcpu` | Includes ClickHouse in AKS for ad workloads |
+| Tech | `10.7.0.0/16` | `github-runners`, `observability`, `infra-platform` | `system`, `workload` | Shared engineering platform services |
+
+## OPCO to workload mapping
+
+| OPCO | Business systems mapped to AKS namespaces |
+|---|---|
+| FSI | Core Banking, Payments, Risk Engine, Regulatory Reporting, Wealth Management, Data Warehouse |
+| Retail | eCommerce, Product Catalogue, Payment, Inventory, Order Fulfillment, Loyalty, Recommendation |
+| Distribution | Route Optimisation, Fleet Management, IoT Tracking |
+| Telco | Billing, Rating, CRM, Self-Service, Network Monitoring, Provisioning, Fault Management |
+| Media | CMS, Streaming, Ad Platform, Workflow, Recommendation, Publishing, DRM |
+| Tech | GitHub Runners, Observability, Infra Platform |
+
+## Related documentation
+
+- [Azure Infrastructure Overview](./azure-infrastructure.mdx)
+- [Hub Shared Services](./hub-services.mdx)
+- [Network Security](./network-security.mdx)
+- [Deployment Guide](./deployment-guide.mdx)

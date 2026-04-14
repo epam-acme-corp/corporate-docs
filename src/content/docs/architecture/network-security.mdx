@@ -1,0 +1,148 @@
+---
+title: Network Security
+description: Network, namespace, PCI, and RBAC controls for the hub-spoke AKS platform.
+---
+
+# Network Security
+
+The Acme Corp Azure platform is designed for **private-by-default connectivity**, **centralized egress control**, and **workload-level isolation inside each AKS cluster**.
+
+## Security control planes
+
+```text
+North-south
+Internet -> Application Gateway -> NGINX Ingress -> Namespace services
+
+East-west
+Spoke subnet -> Hub peering -> Azure Firewall -> Hub services or approved remote spoke
+
+Inside cluster
+Namespace -> NetworkPolicy -> ServiceAccount/Workload Identity -> Private Endpoint -> Data service
+```
+
+## Hub firewall egress filtering
+
+Azure Firewall Premium in the hub is the primary egress control point.
+
+### Current baseline
+
+- Premium firewall policy
+- Threat intelligence mode set to `Alert`
+- Central application rules for approved platform endpoints
+- Central network rule permitting inspected `10.0.0.0/8` traffic through the hub
+
+### Egress policy guidance
+
+Allow outbound traffic only for:
+
+- GitHub and GitHub Actions dependencies
+- ACR image pulls
+- Microsoft platform APIs
+- approved package registries and enterprise integrations
+
+Block or explicitly review:
+
+- direct internet egress from workloads
+- ad hoc cross-spoke communication
+- public endpoints for managed databases
+
+## Spoke-to-spoke routing
+
+Spokes should not communicate directly. The design standard is:
+
+1. **Spoke peers only with the hub**
+2. **Cross-spoke paths route through the hub**
+3. **Allow lists are explicit**
+4. **Default stance is deny unless the business flow requires the path**
+
+This keeps inspection, logging, and change control in one place.
+
+## Kubernetes NetworkPolicy patterns
+
+Use namespace policies to preserve application isolation even when workloads share a cluster.
+
+| Pattern | Default | When to use |
+|---|---|---|
+| Default deny ingress + egress | Required | Every namespace |
+| Namespace allow list | Explicit | Allow specific service-to-service calls |
+| Shared services egress | Explicit | DNS, metrics, secrets provider, approved dependencies |
+| PCI namespace segregation | Explicit | Payment workloads only |
+| GPU / high-CPU lane isolation | Preferred | Keep specialist nodes reserved for intended workloads |
+
+### Recommended baseline
+
+```text
+1. Create namespace
+2. Apply ResourceQuota
+3. Apply default-deny NetworkPolicy
+4. Add allow-list policies only for required service paths
+5. Bind service account to workload identity
+```
+
+## PCI-DSS zones
+
+Two OPCOs have dedicated payment domains that require stricter placement and network separation.
+
+| OPCO | Namespace | Dedicated pool | Scheduling control |
+|---|---|---|---|
+| FSI | `payments` | `pci` | Taint `pci-dss=true:NoSchedule` |
+| Retail | `payment` | `pci` | Taint `pci-dss=true:NoSchedule` |
+
+### PCI expectations
+
+- separate namespace
+- separate node pool
+- separate secrets and identity assignments
+- stricter ingress and egress allow lists
+- enhanced audit retention and dashboarding
+
+## Private endpoints for data services
+
+Managed data services must use private connectivity.
+
+### Common pattern
+
+- Deploy the data service into a delegated or managed subnet where required.
+- Create a **private endpoint** in the `snet-private-endpoints` subnet.
+- Link the spoke VNet into the hub-managed private DNS zone.
+- Disable public network access on the service.
+
+### Applied examples
+
+| OPCO | Private data services |
+|---|---|
+| FSI | PostgreSQL, Cosmos DB Mongo API, Redis |
+| Retail | PostgreSQL, Cosmos DB, Redis |
+| Distribution | PostgreSQL, MySQL |
+| Telco | PostgreSQL, Redis |
+| Media | PostgreSQL, Cosmos DB, Redis |
+| Tech | Cosmos DB |
+
+## RBAC operating model
+
+The target operating model uses a small set of human roles and namespace-scoped workload identities.
+
+| Role | Scope | Responsibilities |
+|---|---|---|
+| Cluster Admin | AKS cluster | cluster upgrades, add-ons, node pools, emergency operations |
+| Namespace Admin | Namespace | deploy workloads, manage config, create namespace-scoped RBAC and policies |
+| Reader | Namespace or resource group | observe resources, logs, dashboards, manifests, and diagnostics |
+
+### Implementation notes
+
+- **Azure RBAC for Kubernetes** is enabled explicitly in Telco and Media, and is the recommended baseline for all new spokes.
+- **Workload identities** are separate from human RBAC and should remain least-privileged.
+- **Reader** permissions are already reflected in repo patterns such as Retail resource-group reader assignments for namespace identities.
+
+## Secure access patterns
+
+- Use **Azure Bastion** for privileged access into private estates.
+- Keep AKS APIs **private** wherever the repo supports it.
+- Disable local accounts where supported.
+- Prefer GitHub Actions OIDC or service principal auth over long-lived credentials.
+
+## Related documentation
+
+- [Hub Shared Services](./hub-services.mdx)
+- [Spoke Architecture](./spoke-architecture.mdx)
+- [Deployment Guide](./deployment-guide.mdx)

@@ -1,0 +1,165 @@
+---
+title: Hub Shared Services
+description: Shared Azure hub services consumed by all Acme Corp spokes.
+---
+
+# Hub Shared Services
+
+The hub (`acme-infra-hub`) is the shared control plane for the Acme Corp Azure landing zone. It owns the network edge, shared platform services, and the outputs each spoke consumes through peering and stack references.
+
+## Hub service map
+
+```text
+Hub VNet 10.0.0.0/16
+├─ AzureFirewallSubnet      10.0.1.0/24
+├─ AzureBastionSubnet       10.0.2.0/24
+├─ GatewaySubnet            10.0.3.0/24
+└─ snet-shared-services     10.0.4.0/24
+   ├─ Key Vault Premium (private endpoint)
+   ├─ ACR Premium (private endpoint)
+   ├─ Log Analytics workspace
+   ├─ Azure Monitor workspace
+   ├─ Private DNS zones
+   └─ Managed Grafana dashboards
+```
+
+## Shared service catalogue
+
+| Service | Tier / Mode | Why it lives in the hub | Primary spoke dependency |
+|---|---|---|---|
+| Azure Firewall | Premium | Central egress filtering and routed east-west control | Spoke route tables and cross-spoke inspection |
+| Azure Bastion | Standard | Browser-based privileged access without public VM IPs | Operations access to private estates |
+| Key Vault | Premium | Shared secret and certificate boundary with RBAC and private access | CSI-mounted secrets and automation credentials |
+| Azure Container Registry | Premium | Single trusted image source for all AKS clusters | `AcrPull` for workload identities and cluster pulls |
+| Log Analytics | PerGB2018 | Central diagnostics sink and retention boundary | AKS diagnostics, platform logs, firewall logs |
+| Azure Monitor Workspace | Managed Prometheus data plane | Shared metrics workspace for AKS scraping | Cluster metrics and alerting |
+| Private DNS Zones | Private DNS | Shared name resolution for private endpoints and AKS control plane records | Postgres, Cosmos, Redis, ACR, Key Vault, AKS |
+| Managed Grafana | Shared dashboards | Common dashboards and SRE views across spokes | Platform and OPCO dashboards |
+
+## Azure Firewall
+
+The hub deploys **Azure Firewall Premium** with a dedicated policy and rule collection group.
+
+### Rule strategy
+
+- **Threat intelligence mode:** `Alert`
+- **Network allow rule:** spoke address space to spoke address space (`10.0.0.0/8` → `10.0.0.0/8`) routed through the hub
+- **Application allow rule:** outbound HTTP/HTTPS to required platform endpoints such as:
+  - `*.github.com`
+  - `*.docker.io`
+  - `*.azurecr.io`
+  - `*.microsoft.com`
+
+### Operating model
+
+1. Hub owns the firewall policy.
+2. Spokes inherit the egress baseline and add only approved exceptions.
+3. Cross-spoke traffic should route through the hub, never through direct spoke-to-spoke peering.
+4. The hub exports `firewallPrivateIp` so route tables can force egress through the inspection point.
+
+See [Network Security](./network-security.mdx) for routing and allow-list patterns.
+
+## Azure Bastion
+
+Azure Bastion provides secure administrative access into private address space.
+
+- **SKU:** Standard
+- **Subnet:** `AzureBastionSubnet`
+- **Access pattern:** portal/browser session into private hosts, jump boxes, or migration support assets
+- **Reason:** no public IP requirement on spoke administration hosts
+
+Use Bastion for break-glass operations, migration activity, and controlled access to workloads that do not expose public management endpoints.
+
+## Key Vault Premium
+
+The shared hub vault is provisioned with:
+
+- **SKU:** Premium
+- **RBAC authorization:** enabled
+- **Purge protection:** enabled
+- **Soft delete retention:** 90 days
+- **Public network access:** disabled
+- **Private endpoint:** yes
+
+### Usage pattern
+
+- Workloads use **Workload Identity** plus the **Key Vault CSI Driver** to fetch secrets at runtime.
+- Shared certificates and bootstrap secrets are stored once and consumed from spoke namespaces.
+- **FSI** and **Insurance** are the primary consumers for HSM-backed or higher-assurance secret handling because of stronger regulatory requirements.
+
+## Azure Container Registry Premium
+
+The hub ACR is the shared image registry for all spokes.
+
+- **SKU:** Premium
+- **Public network access:** disabled
+- **Admin user:** disabled
+- **Trust policy:** enabled
+- **Private endpoint:** yes
+
+### Consumption model
+
+- Cluster and workload identities receive `AcrPull`.
+- Build pipelines push once to the shared registry.
+- Spokes pull from the same registry to keep provenance and retention rules consistent.
+
+## Log Analytics
+
+Log Analytics is the central diagnostics sink for platform telemetry.
+
+- **Retention:** 90 days
+- **Connected resources:** hub VNet diagnostics, firewall diagnostics, Key Vault diagnostics, AKS add-ons, and platform resources
+- **Purpose:** searchable operational logs, alerting, and integration with Azure Monitor
+
+## Private DNS Zones
+
+The hub creates and links shared private DNS zones so spokes can resolve private Azure endpoints consistently.
+
+| Zone | Purpose |
+|---|---|
+| `privatelink.azurecr.io` | ACR private endpoint resolution |
+| `privatelink.vaultcore.azure.net` | Key Vault private endpoint resolution |
+| `privatelink.postgres.database.azure.com` | PostgreSQL Flexible Server private endpoint resolution |
+| `privatelink.mongo.cosmos.azure.com` | Cosmos DB Mongo API private endpoint resolution |
+| `privatelink.redis.cache.windows.net` | Redis private endpoint resolution |
+| `azmk8s.io` | AKS private control-plane name resolution |
+
+Each spoke is linked into these zones after peering so managed services remain private-endpoint reachable without duplicating DNS management in every OPCO repo.
+
+## Azure Monitor and Managed Grafana
+
+The hub exports an **Azure Monitor workspace** that serves as the shared metrics backend for AKS clusters.
+
+### Monitoring split
+
+- **Managed Prometheus / Azure Monitor workspace** — cluster and node metrics
+- **Log Analytics** — logs and diagnostics
+- **Managed Grafana** — dashboards, SLOs, and operations views
+
+### Dashboard expectations
+
+- Platform health by spoke
+- Cluster saturation by node pool
+- Namespace capacity and quota consumption
+- PCI namespace alerting for FSI and Retail
+- Shared services health: firewall, Key Vault, ACR, DNS, and monitoring plane
+
+## Hub outputs consumed by spokes
+
+| Output | Used for |
+|---|---|
+| `hubVnetId` | Peering from each spoke |
+| `hubVnetName` | Reverse peering and DNS links |
+| `hubResourceGroupName` | Shared resource lookups |
+| `keyVaultUri` | Key Vault CSI and secret retrieval |
+| `acrLoginServer` | Container image pulls |
+| `logAnalyticsWorkspaceId` | AKS diagnostics and Container Insights |
+| `privateDnsZoneIds` / `exportedPrivateDnsZoneIds` | Private endpoint DNS linking |
+| `firewallPrivateIp` | Forced egress and inspection routing |
+
+## Related documentation
+
+- [Azure Infrastructure Overview](./azure-infrastructure.mdx)
+- [Spoke Architecture](./spoke-architecture.mdx)
+- [Network Security](./network-security.mdx)
+- [Deployment Guide](./deployment-guide.mdx)

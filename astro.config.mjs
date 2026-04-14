@@ -20,7 +20,20 @@ export default defineConfig({
         { label: 'Subsidiary Documentation Portal', slug: 'opco-directory' },
         {
           label: 'Architecture',
-          autogenerate: { directory: 'architecture' },
+          items: [
+            { slug: 'architecture/azure-infrastructure' },
+            { slug: 'architecture/hub-services' },
+            { slug: 'architecture/spoke-architecture' },
+            { slug: 'architecture/network-security' },
+            { slug: 'architecture/deployment-guide' },
+            { slug: 'architecture/enterprise-summary' },
+            { slug: 'architecture/integration-overview' },
+            { slug: 'architecture/integration-patterns' },
+            { slug: 'architecture/data-flows' },
+            { slug: 'architecture/analytics-platform' },
+            { slug: 'architecture/technology-radar' },
+            { slug: 'architecture/modernization-roadmap' },
+          ],
         },
         {
           label: 'API Contracts',

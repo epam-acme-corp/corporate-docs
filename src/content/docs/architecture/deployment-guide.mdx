@@ -1,0 +1,190 @@
+---
+title: Deployment Guide
+description: Pulumi deployment runbook for the Acme Corp hub and spoke Azure infrastructure.
+---
+
+# Deployment Guide
+
+This runbook covers the **hub-first, spokes-second** deployment model for the Acme Corp Azure landing zone.
+
+:::tip[Deployment order]
+Deploy `acme-infra-hub` first. After hub outputs are available, spoke stacks can be deployed in parallel.
+:::
+
+## Prerequisites
+
+- **Node.js 22**
+- **Pulumi CLI**
+- **Azure CLI**
+- Azure access with rights to create networking, AKS, identities, private endpoints, and data services
+- `PULUMI_ACCESS_TOKEN`
+- Azure provider credentials:
+  - `ARM_CLIENT_ID`
+  - `ARM_CLIENT_SECRET`
+  - `ARM_TENANT_ID`
+  - `ARM_SUBSCRIPTION_ID`
+
+## Local preparation
+
+```bash
+az login
+az account set --subscription <subscription-id>
+pulumi login
+```
+
+Then, inside any infrastructure repo:
+
+```bash
+npm install
+npm run build
+pulumi preview
+```
+
+## 1. Deploy the hub
+
+Repository: [`epam-acme-corp/acme-infra-hub`](https://github.com/epam-acme-corp/acme-infra-hub)
+
+```bash
+pulumi stack init prod
+pulumi config set azure-native:location eastus
+pulumi config set acme-infra-hub:environment prod
+pulumi config set acme-infra-hub:hubCidr 10.0.0.0/16
+pulumi config set --path 'acme-infra-hub:spokeCidrs.fsi' 10.1.0.0/16
+pulumi config set --path 'acme-infra-hub:spokeCidrs.retail' 10.2.0.0/16
+pulumi config set --path 'acme-infra-hub:spokeCidrs.insurance' 10.3.0.0/16
+pulumi config set --path 'acme-infra-hub:spokeCidrs.distribution' 10.4.0.0/16
+pulumi config set --path 'acme-infra-hub:spokeCidrs.telco' 10.5.0.0/16
+pulumi config set --path 'acme-infra-hub:spokeCidrs.media' 10.6.0.0/16
+pulumi config set --path 'acme-infra-hub:spokeCidrs.tech' 10.7.0.0/16
+pulumi preview
+pulumi up
+```
+
+Capture these outputs after the apply:
+
+- `hubVnetId`
+- `hubVnetName`
+- `hubResourceGroupName`
+- `keyVaultUri`
+- `acrLoginServer`
+- `logAnalyticsWorkspaceId`
+- `firewallPrivateIp`
+- `exportedPrivateDnsZoneIds`
+
+## 2. Deploy spokes in parallel
+
+After the hub is live, each OPCO repo can run independently.
+
+### Common spoke sequence
+
+```bash
+pulumi stack init prod
+npm install
+npm run build
+pulumi preview
+pulumi up
+```
+
+### Repo-specific configuration
+
+| Repo | Required / important config keys | Secrets |
+|---|---|---|
+| `acme-infra-fsi` | `environment`, `location`, `hubStackRef`, `paymentsDbAdminUser`, `riskDbAdminUser` | `paymentsDbAdminPassword`, `riskDbAdminPassword` |
+| `acme-infra-retail` | `azure-native:location`, `environment`, `hubStackReference` | none checked in; keep runtime secrets in Key Vault |
+| `acme-infra-insurance` | `azure-native:location`, `environment`, `vnetCidr`, `hubVnetId` | none |
+| `acme-infra-distribution` | `azure-native:location`, `environment`, `spokeCidr`, `hubStackReference`, `dbAdmin.postgresUser`, `dbAdmin.mysqlUser` | `postgresAdminPassword`, `mysqlAdminPassword` |
+| `acme-infra-telco` | `location`, `hubVnetResourceId`, `postgresAdminLogin` | `postgresAdminPassword` |
+| `acme-infra-media` | `subscriptionId`, `hubVnetResourceId`, `location`, `resourceGroupName`, `postgresAdminUsername` | `postgresAdminPassword` |
+| `acme-infra-tech` | `environment`, `vnetCidr`, `hubResourceGroupName`, `hubVnetName`, `hubVnetId` | none |
+
+### Examples
+
+#### Financial Services
+
+```bash
+pulumi config set --secret acme-infra-fsi:paymentsDbAdminPassword <value> --stack prod
+pulumi config set --secret acme-infra-fsi:riskDbAdminPassword <value> --stack prod
+pulumi preview --stack prod
+pulumi up --stack prod
+```
+
+#### Distribution
+
+```bash
+pulumi config set acme-infra-distribution:hubStackReference epam-acme-corp/acme-infra-hub/prod
+pulumi config set --secret acme-infra-distribution:postgresAdminPassword <value>
+pulumi config set --secret acme-infra-distribution:mysqlAdminPassword <value>
+pulumi preview
+pulumi up
+```
+
+#### Insurance
+
+```bash
+pulumi config set acme-infra-insurance:hubVnetId "/subscriptions/<subscription-id>/resourceGroups/rg-acme-hub-prod/providers/Microsoft.Network/virtualNetworks/vnet-acme-hub-prod"
+pulumi preview
+pulumi up
+```
+
+## Secrets management
+
+Use **Pulumi secret config** for bootstrap values and move application secrets into **Key Vault** as early as possible.
+
+### Rules
+
+- Store only deployment bootstrap secrets in Pulumi config.
+- Mark database passwords with `--secret`.
+- Do not hardcode credentials in `Pulumi.<stack>.yaml`.
+- Prefer workload identity + CSI-mounted Key Vault secrets for runtime use.
+
+### Typical commands
+
+```bash
+pulumi config set --secret <namespace>:postgresAdminPassword <value>
+pulumi config set --secret <namespace>:mysqlAdminPassword <value>
+pulumi config set --secret <namespace>:riskDbAdminPassword <value>
+```
+
+## CI/CD workflow
+
+The standard delivery model is a GitHub Actions workflow named `.github/workflows/pulumi.yml`.
+
+### Expected pattern
+
+- **Pull request** → `pulumi preview`
+- **Push to `main`** → `pulumi up`
+- **Permissions** → `contents: read`, `id-token: write`
+- **Node runtime** → Node.js 22 baseline
+
+### Current checked-in coverage
+
+| Repo | Workflow status |
+|---|---|
+| `acme-infra-hub` | Preview on PR, apply on push to `main` |
+| `acme-infra-fsi` | Validation + preview workflow present |
+| `acme-infra-retail` | Preview on PR, apply on push to `main` |
+| `acme-infra-distribution` | Preview on PR, apply on push to `main` |
+| `acme-infra-insurance` | No workflow committed yet |
+| `acme-infra-telco` | No workflow committed yet |
+| `acme-infra-media` | No workflow committed yet |
+| `acme-infra-tech` | No workflow committed yet |
+
+Recommended next step for the remaining spokes: standardize on the same preview/apply workflow before production rollout.
+
+## Troubleshooting
+
+| Issue | Likely cause | Action |
+|---|---|---|
+| Spoke preview fails resolving hub outputs | Hub stack not deployed or wrong stack reference | Verify `hubStackRef` / `hubStackReference` / `hubVnetId` values |
+| AKS cannot pull images | Missing `AcrPull` permission or ACR private DNS issue | Check workload identity role assignment and hub DNS links |
+| Secrets do not mount in pods | Missing Workload Identity annotation or CSI configuration | Check service account annotation and `SecretProviderClass` |
+| Database endpoint is unreachable | Private endpoint or DNS link missing | Validate private endpoint state and hub DNS zone links |
+| Pulumi authentication fails in CI | Missing `PULUMI_ACCESS_TOKEN` or Azure ARM credentials | Recheck repository secrets and workflow permissions |
+| Build fails locally | Wrong Node version | Switch to Node.js 22 and rerun `npm install` |
+
+## Related documentation
+
+- [Azure Infrastructure Overview](./azure-infrastructure.mdx)
+- [Hub Shared Services](./hub-services.mdx)
+- [Spoke Architecture](./spoke-architecture.mdx)
+- [Network Security](./network-security.mdx)
